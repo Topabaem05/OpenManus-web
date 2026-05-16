@@ -7,13 +7,17 @@ from openai import (
     AsyncAzureOpenAI,
     AsyncOpenAI,
     AuthenticationError,
+    BadRequestError,
+    NotFoundError,
     OpenAIError,
+    PermissionDeniedError,
     RateLimitError,
+    UnprocessableEntityError,
 )
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_random_exponential,
 )
@@ -40,6 +44,24 @@ MULTIMODAL_MODELS = [
     "claude-3-sonnet-20240229",
     "claude-3-haiku-20240307",
 ]
+
+
+NON_RETRYABLE_LLM_ERRORS = (
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+    PermissionDeniedError,
+    UnprocessableEntityError,
+)
+
+
+def should_retry_llm_error(exc: BaseException) -> bool:
+    """Retry transient LLM failures, but fail fast on permanent request errors."""
+    if isinstance(exc, TokenLimitExceeded):
+        return False
+    if isinstance(exc, NON_RETRYABLE_LLM_ERRORS):
+        return False
+    return isinstance(exc, (OpenAIError, ValueError))
 
 
 class TokenCounter:
@@ -354,9 +376,7 @@ class LLM:
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
-        retry=retry_if_exception_type(
-            (OpenAIError, Exception, ValueError)
-        ),  # Don't retry TokenLimitExceeded
+        retry=retry_if_exception(should_retry_llm_error),
     )
     async def ask(
         self,
@@ -469,6 +489,11 @@ class LLM:
             logger.exception(f"OpenAI API error")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
+            elif isinstance(oe, NotFoundError):
+                logger.error(
+                    f"Model or endpoint not found. Check model={self.model!r} "
+                    f"and base_url={self.base_url!r}."
+                )
             elif isinstance(oe, RateLimitError):
                 logger.error("Rate limit exceeded. Consider increasing retry attempts.")
             elif isinstance(oe, APIError):
@@ -481,9 +506,7 @@ class LLM:
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
-        retry=retry_if_exception_type(
-            (OpenAIError, Exception, ValueError)
-        ),  # Don't retry TokenLimitExceeded
+        retry=retry_if_exception(should_retry_llm_error),
     )
     async def ask_with_images(
         self,
@@ -625,6 +648,11 @@ class LLM:
             logger.error(f"OpenAI API error: {oe}")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
+            elif isinstance(oe, NotFoundError):
+                logger.error(
+                    f"Model or endpoint not found. Check model={self.model!r} "
+                    f"and base_url={self.base_url!r}."
+                )
             elif isinstance(oe, RateLimitError):
                 logger.error("Rate limit exceeded. Consider increasing retry attempts.")
             elif isinstance(oe, APIError):
@@ -637,9 +665,7 @@ class LLM:
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
-        retry=retry_if_exception_type(
-            (OpenAIError, Exception, ValueError)
-        ),  # Don't retry TokenLimitExceeded
+        retry=retry_if_exception(should_retry_llm_error),
     )
     async def ask_tool(
         self,
@@ -756,6 +782,11 @@ class LLM:
             logger.error(f"OpenAI API error: {oe}")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
+            elif isinstance(oe, NotFoundError):
+                logger.error(
+                    f"Model or endpoint not found. Check model={self.model!r} "
+                    f"and base_url={self.base_url!r}."
+                )
             elif isinstance(oe, RateLimitError):
                 logger.error("Rate limit exceeded. Consider increasing retry attempts.")
             elif isinstance(oe, APIError):
