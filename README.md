@@ -193,3 +193,9 @@ OpenManus is built by contributors from MetaGPT. Huge thanks to this agent commu
   url = {https://doi.org/10.5281/zenodo.15186407},
 }
 ```
+
+---
+
+## Related Project
+
+[OpenLife Market](https://topabaem05.github.io/openlife-market/) - Autonomous AI agents that must sell their own research to survive. Live experiment based on arXiv:2606.31046.
