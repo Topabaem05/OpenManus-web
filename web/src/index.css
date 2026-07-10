@@ -2,41 +2,85 @@
 @import "tailwindcss";
 
 :root {
-  /* Manus brand tokens — light mode default */
-  --color-brand-black: #34322D;
-  --color-brand-gray: #F8F8F8;
-  --color-brand-white: #FFFFFF;
-  --color-bg-primary: #F8F8F7;
+  /* Spec Section 15.1 — Light mode color tokens */
+  --color-bg-primary: #F7F7F8;
   --color-bg-secondary: #FFFFFF;
-  --color-bg-tertiary: #EBEBEB;
-  --color-bg-elevated: #FFFFFF;
-  --color-text-primary: #34322D;
-  --color-text-secondary: #5E5E5B;
-  --color-text-tertiary: #858481;
-  --color-border: rgba(0,0,0,0.08);
-  --color-cta-bg: #34322D;
+  --color-bg-tertiary: #F2F3F5;
+  --color-border: #E6E7EA;
+  --color-text-primary: #171719;
+  --color-text-secondary: #6B6E76;
+  --color-text-tertiary: #9CA0A8;
+  --color-accent: #5B5BD6;
+  --color-accent-hover: #4A4AC0;
+  --color-success: #1F9D63;
+  --color-warning: #D88A14;
+  --color-danger: #D94C4C;
+  --color-cta-bg: #171719;
   --color-cta-text: #FFFFFF;
-  --color-destructive: #E05050;
-  --color-success: #22C55E;
-  --color-status-active: #3B82F6;
-  --color-status-pending: #6B7280;
+  --color-status-active: #5B5BD6;
+  --color-status-pending: #6B6E76;
+  --color-status-failed: #D94C4C;
+  --color-status-completed: #1F9D63;
+  --color-status-approval: #D88A14;
+
+  /* Typography */
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Libre Baskerville", ui-serif, Georgia, serif;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-pill: 24px;
-  --transition-fast: 150ms ease-out;
-  --transition-medium: 250ms ease-out;
-  --transition-slow: 350ms ease-in-out;
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.10);
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 9999px;
+
+  /* Spec Section 14.1 — Motion tokens */
+  --motion-instant: 80ms;
+  --motion-fast: 140ms;
+  --motion-normal: 220ms;
+  --motion-slow: 360ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(91, 91, 214, 0.15);
+
+  /* Layout widths per spec Section 12.1 */
+  --width-sidebar: 248px;
+  --width-timeline-min: 520px;
+  --width-workspace-min: 520px;
+  --width-workspace-max: 720px;
+  --width-total-min: 1180px;
+}
+
+.dark {
+  /* Spec Section 15.1 — Dark mode */
+  --color-bg-primary: #111214;
+  --color-bg-secondary: #18191C;
+  --color-bg-tertiary: #202226;
+  --color-border: #2D3035;
+  --color-text-primary: #F3F4F6;
+  --color-text-secondary: #A6A9B0;
+  --color-text-tertiary: #6B6E76;
+  --color-accent: #7B7BF6;
+  --color-accent-hover: #6B6BE6;
+  --color-cta-bg: #F3F4F6;
+  --color-cta-text: #111214;
+  --color-status-active: #7B7BF6;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-focus: 0 0 0 3px rgba(123, 123, 246, 0.2);
 }
 
 @theme {
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Libre Baskerville", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 html, body, #root {
@@ -49,107 +93,213 @@ body {
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3.section-title {
   font-family: var(--font-serif);
 }
 
-/* ---- Manus animation keyframes (design system spec) ---- */
+/* ====================================================================== */
+/* Spec Section 14 — Animation keyframes (motion explains execution state) */
+/* ====================================================================== */
 
+/* 14.2 — Message appearance: opacity 0->1, translateY 6px->0, 180ms */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 @keyframes slide-in-from-bottom-2 {
-  from { transform: translateY(8px); opacity: 0; }
+  from { transform: translateY(6px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 @keyframes slide-in-from-bottom-4 {
   from { transform: translateY(16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* 14.3 — Plan node: Pending -> Running: scale 0.85->1.0, bg alpha 0->0.04 */
+@keyframes nodeActivate {
+  from { transform: scale(0.85); opacity: 0.5; }
+  to { transform: scale(1.0); opacity: 1; }
+}
+
+/* 14.3 — Running -> Completed: spinner fade out, check scale 0.7->1 */
+@keyframes checkmarkDraw {
+  0% { stroke-dashoffset: 24; transform: scale(0.7); }
+  60% { stroke-dashoffset: -2; transform: scale(1.1); }
+  100% { stroke-dashoffset: 0; transform: scale(1); }
+}
+
+/* 14.4 — Tool card expand: height 0->auto, opacity 0->1 */
+@keyframes toolCardExpand {
+  from { max-height: 0; opacity: 0; }
+  to { max-height: 600px; opacity: 1; }
+}
+
+/* 14.5 — Browser click ripple: scale 0.4->1.8, opacity 0.8->0, 450ms */
+@keyframes clickRipple {
+  0% { transform: scale(0.4); opacity: 0.8; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+/* 14.6 — Task completion: artifact stagger 40ms */
+@keyframes artifactStagger {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Zoom in for cards and modals */
 @keyframes zoom-in-95 {
   from { transform: scale(0.95); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
 
-/* Pulsing status indicator — blue dot for active agent steps */
+/* Status pulse — accent dot for active steps */
 @keyframes statusPulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
-  50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(91, 91, 214, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(91, 91, 214, 0); }
 }
 
-/* Checkmark SVG stroke draw-in with bounce */
-@keyframes checkmarkDraw {
-  0% { stroke-dashoffset: 24; }
-  60% { stroke-dashoffset: -2; }
-  100% { stroke-dashoffset: 0; }
-}
-
-/* Panel slide up — computer dock expand */
-@keyframes panelSlideUp {
-  from { transform: translateY(100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-/* Loading ring — continuous rotation */
+/* Loading ring rotation */
 @keyframes loadingRing {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
-/* Modal appear — overlay fade + dialog scale */
+/* Panel slide up */
+@keyframes panelSlideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Modal appear */
 @keyframes modalAppear {
-  from { opacity: 0; transform: scale(0.95); }
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Thumbnail crossfade between browser frames */
+@keyframes thumbnailCrossfade {
+  from { opacity: 0.3; transform: scale(0.98); }
   to { opacity: 1; transform: scale(1); }
 }
 
-/* Thumbnail crossfade between frames */
-@keyframes thumbnailCrossfade {
-  from { opacity: 0.4; }
-  to { opacity: 1; }
-}
-
-/* Dropdown scale from origin + fade */
+/* Dropdown scale from origin */
 @keyframes dropdownScale {
   from { opacity: 0; transform: scale(0.96) translateY(-4px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-.animate-in { animation-duration: 300ms; animation-fill-mode: both; }
+/* gpt-taste: Image scale & fade on scroll */
+@keyframes imageScaleIn {
+  from { transform: scale(0.92); opacity: 0.4; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* gpt-taste: Scrubbing text reveal — word opacity */
+@keyframes wordReveal {
+  from { opacity: 0.1; }
+  to { opacity: 1; }
+}
+
+/* ====================================================================== */
+/* Animation utility classes — mapped to motion tokens                    */
+/* ====================================================================== */
+
+.animate-in { animation-duration: var(--motion-normal); animation-fill-mode: both; }
+.animate-in-fast { animation-duration: var(--motion-fast); animation-fill-mode: both; }
+.animate-in-slow { animation-duration: var(--motion-slow); animation-fill-mode: both; }
 .fade-in { animation-name: fade-in; }
 .slide-in-from-bottom-2 { animation-name: slide-in-from-bottom-2; }
 .slide-in-from-bottom-4 { animation-name: slide-in-from-bottom-4; }
 .zoom-in-95 { animation-name: zoom-in-95; }
+.duration-80 { animation-duration: var(--motion-instant); }
+.duration-140 { animation-duration: var(--motion-fast); }
+.duration-220 { animation-duration: var(--motion-normal); }
+.duration-360 { animation-duration: var(--motion-slow); }
 .duration-150 { animation-duration: 150ms; }
 .duration-200 { animation-duration: 200ms; }
 .duration-300 { animation-duration: 300ms; }
 .duration-500 { animation-duration: 500ms; }
 
-/* Manus-specific animation helpers */
+/* Spec-specific animation helpers */
 .animate-status-pulse { animation: statusPulse 2s ease-in-out infinite; }
 .animate-loading-ring { animation: loadingRing 0.8s linear infinite; }
-.animate-panel-slide-up { animation: panelSlideUp 350ms ease-in-out both; }
-.animate-modal-appear { animation: modalAppear 250ms ease-out both; }
-.animate-dropdown { animation: dropdownScale 200ms ease-out both; }
-.animate-thumbnail-crossfade { animation: thumbnailCrossfade 300ms ease-in-out both; }
+.animate-panel-slide-up { animation: panelSlideUp var(--motion-slow) var(--ease-enter) both; }
+.animate-modal-appear { animation: modalAppear var(--motion-normal) var(--ease-standard) both; }
+.animate-dropdown { animation: dropdownScale var(--motion-fast) var(--ease-standard) both; }
+.animate-thumbnail-crossfade { animation: thumbnailCrossfade var(--motion-normal) var(--ease-standard) both; }
 .animate-checkmark-draw {
   stroke-dasharray: 24;
-  animation: checkmarkDraw 400ms ease-out both;
+  animation: checkmarkDraw var(--motion-normal) var(--ease-standard) both;
+}
+.animate-node-activate { animation: nodeActivate var(--motion-normal) var(--ease-enter) both; }
+.animate-tool-card-expand { animation: toolCardExpand var(--motion-normal) var(--ease-standard) both; }
+.animate-click-ripple { animation: clickRipple 450ms var(--ease-exit) forwards; }
+.animate-artifact-stagger { animation: artifactStagger var(--motion-normal) var(--ease-enter) both; }
+.animate-image-scale-in { animation: imageScaleIn var(--motion-slow) var(--ease-standard) both; }
+
+/* Stagger delays for artifact cards (40ms per spec 14.6) */
+.stagger-1 { animation-delay: 40ms; }
+.stagger-2 { animation-delay: 80ms; }
+.stagger-3 { animation-delay: 120ms; }
+.stagger-4 { animation-delay: 160ms; }
+.stagger-5 { animation-delay: 200ms; }
+
+/* gpt-taste: Hover physics for cards */
+.hover-physics {
+  transition: transform var(--motion-slow) var(--ease-standard), box-shadow var(--motion-normal) var(--ease-standard);
+}
+.hover-physics:hover {
+  transform: scale(1.02);
 }
 
-/* Custom scrollbar — light theme */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--color-bg-primary); }
-::-webkit-scrollbar-thumb { background: #D4D4D4; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #B0B0B0; }
+/* gpt-taste: Image hover scale in overflow-hidden containers */
+.image-hover-zoom {
+  overflow: hidden;
+}
+.image-hover-zoom img {
+  transition: transform var(--motion-slow) var(--ease-standard);
+}
+.image-hover-zoom:hover img {
+  transform: scale(1.05);
+}
 
-/* Reduce motion accessibility */
+/* Click ripple overlay */
+.click-ripple-overlay {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--color-accent);
+  pointer-events: none;
+  animation: clickRipple 450ms var(--ease-exit) forwards;
+}
+
+/* Focus ring using accent color */
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
+
+/* Spec 14.7 — Reduced motion: remove transforms, keep opacity at 80ms */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: var(--motion-instant) !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: var(--motion-instant) !important;
+    transform: none !important;
+  }
+  .animate-status-pulse,
+  .animate-loading-ring {
+    animation: none !important;
   }
 }

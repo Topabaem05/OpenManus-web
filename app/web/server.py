@@ -235,3 +235,33 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=9000)
+
+
+# --- Static frontend serving (for production / podman deployment) ---
+
+import os
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# web/dist is where Vite builds the production frontend
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
+
+if _FRONTEND_DIST.exists():
+    # Serve static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="assets")
+
+    # Serve public files (favicon, icons)
+    _public = _FRONTEND_DIST / "public" if (_FRONTEND_DIST / "public").exists() else _FRONTEND_DIST
+    if _public.exists():
+        for f in _public.iterdir():
+            if f.is_file():
+                app.mount(f"/{f.name}", StaticFiles(directory=str(_public)), name=f"public-{f.name}")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """SPA fallback: serve index.html for any non-API, non-WS route."""
+        file_path = _FRONTEND_DIST / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(_FRONTEND_DIST / "index.html"))
