@@ -28,6 +28,22 @@ class LLMSettings(BaseModel):
     temperature: float = Field(1.0, description="Sampling temperature")
     api_type: str = Field(..., description="Azure, Openai, or Ollama")
     api_version: str = Field(..., description="Azure Openai version if AzureOpenai")
+    reasoning_enabled: bool = Field(
+        False, description="Enable provider-specific reasoning controls when supported"
+    )
+    tool_calls_enabled: bool = Field(
+        True, description="Enable OpenAI-compatible tool/function calling"
+    )
+    app_url: Optional[str] = Field(
+        None, description="Optional application URL for provider attribution headers"
+    )
+    app_name: Optional[str] = Field(
+        None, description="Optional application name for provider attribution headers"
+    )
+    fallback_models: List[str] = Field(
+        default_factory=list, description="Fallback models to try if the primary model fails"
+    )
+    request_timeout: float = Field(60.0, description="Request timeout in seconds")
 
 
 class ProxySettings(BaseModel):
@@ -106,7 +122,7 @@ class SandboxSettings(BaseModel):
 
 
 class DaytonaSettings(BaseModel):
-    daytona_api_key: str
+    daytona_api_key: str = Field(default="", description="")
     daytona_server_url: Optional[str] = Field(
         "https://app.daytona.io/api", description=""
     )
@@ -246,6 +262,10 @@ class Config:
             "temperature": base_llm.get("temperature", 1.0),
             "api_type": base_llm.get("api_type", ""),
             "api_version": base_llm.get("api_version", ""),
+            "reasoning_enabled": base_llm.get("reasoning_enabled", False),
+            "tool_calls_enabled": base_llm.get("tool_calls_enabled", True),
+            "app_url": base_llm.get("app_url"),
+            "app_name": base_llm.get("app_name"),
         }
 
         # handle browser config.
