@@ -115,3 +115,17 @@ export async function stopSession(sessionId: string) {
   if (!res.ok) throw new Error(`Failed to stop session: ${res.statusText}`);
   return res.json();
 }
+
+export interface PersistedSession {
+  session_id: string;
+  status: string;
+  last_message?: string;
+  created_at?: string;
+}
+
+export async function fetchSessions(): Promise<PersistedSession[]> {
+  const res = await fetch(`${API_BASE}/api/sessions`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.sessions || [];
+}
