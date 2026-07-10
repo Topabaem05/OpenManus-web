@@ -2,7 +2,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar, Dict, Optional
 
-from daytona import Daytona, DaytonaConfig, Sandbox, SandboxState
+try:
+    from daytona import Daytona, DaytonaConfig, Sandbox, SandboxState
+except ImportError:
+    Daytona = None  # type: ignore
+    DaytonaConfig = None  # type: ignore
+    Sandbox = None  # type: ignore
+    SandboxState = None  # type: ignore
 from pydantic import Field
 
 from app.config import config
@@ -14,12 +20,16 @@ from app.utils.logger import logger
 
 # load_dotenv()
 daytona_settings = config.daytona
-daytona_config = DaytonaConfig(
-    api_key=daytona_settings.daytona_api_key,
-    server_url=daytona_settings.daytona_server_url,
-    target=daytona_settings.daytona_target,
-)
-daytona = Daytona(daytona_config)
+if DaytonaConfig is not None:
+    daytona_config = DaytonaConfig(
+        api_key=daytona_settings.daytona_api_key,
+        server_url=daytona_settings.daytona_server_url,
+        target=daytona_settings.daytona_target,
+    )
+    daytona = Daytona(daytona_config)
+else:
+    daytona_config = None
+    daytona = None
 
 
 @dataclass
