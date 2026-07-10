@@ -11,8 +11,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
 
-from microsandbox import Sandbox
-from microsandbox.types import Network
+try:
+    from microsandbox import Sandbox
+    from microsandbox.types import Network
+
+    MICROSANDBOX_AVAILABLE = True
+except ImportError:
+    Sandbox = None  # type: ignore
+    Network = None  # type: ignore
+    MICROSANDBOX_AVAILABLE = False
 
 from app.config import config
 from app.logger import logger
@@ -70,8 +77,8 @@ class SessionStore:
 INPUT_FILE = "/tmp/webmanus_input.json"
 STATE_FILE = "/tmp/webmanus_state.json"
 SESSION_CREATE_TIMEOUT_SECONDS = 120
-VM_SETUP_TIMEOUT_SECONDS = 180
-PLAYWRIGHT_BROWSER_TIMEOUT_SECONDS = 180
+VM_SETUP_TIMEOUT_SECONDS = 300
+PLAYWRIGHT_BROWSER_TIMEOUT_SECONDS = 300
 RUNNER_START_TIMEOUT_SECONDS = 30
 SESSION_CLEANUP_TIMEOUT_SECONDS = 30
 PLAYWRIGHT_SYSTEM_PACKAGES = [
@@ -150,6 +157,13 @@ class SandboxSessionManager:
         session_id = session_id or f"sess_{uuid.uuid4().hex[:12]}"
         vm_name = f"webmanus_{session_id}"
 
+        if not MICROSANDBOX_AVAILABLE:
+            raise RuntimeError(
+                "microsandbox >= 0.4.0 is not installed on this platform. "
+                "VM-based sandbox sessions are unavailable. "
+                "Install microsandbox or use 'python main.py' for direct agent execution."
+            )
+
         llm_config_name = os.getenv("WEBMANUS_LLM_CONFIG", "default")
         llm_settings = config.llm.get(llm_config_name, config.llm["default"])
         info = SessionInfo(
@@ -208,12 +222,12 @@ class SandboxSessionManager:
             await self.destroy_session(session_id)
             raise
 
-    async def _setup_vm(self, sandbox):
-        result = await sandbox.exec("python3", ["--version"])
-        logger.info(f"VM Python: {result.stdout_text.strip()}")
+    @staticmethod
+    def _batch_runtime_packages(packages, batch_size=5):
+        # ponytail: simple list slice, no external util needed
+        return [packages[i : i + batch_size] for i in range(0, len(packages), batch_size)]
 
-        await self._copy_project_code(sandbox)
-
+    async def _install_runtime_packages(self, sandbox):
         runtime_packages = [
             "pydantic~=2.10.6",
             "openai~=1.66.3",
@@ -227,67 +241,103 @@ class SandboxSessionManager:
             "beautifulsoup4~=4.13.3",
             "browser-use~=0.1.40",
             "playwright~=1.51.0",
+            "python-pptx~=1.0.2",
+            "fpdf2~=2.8.3",
+            "matplotlib~=3.10.0",
             "mcp~=1.5.0",
             "docker~=7.1.0",
             "googlesearch-python~=1.3.0",
             "baidusearch~=1.0.3",
             "duckduckgo_search~=7.5.3",
         ]
-        result = await sandbox.exec("pip", ["install", "-q", *runtime_packages])
-        if result.exit_code != 0:
-            logger.warning(f"pip install had issues: {result.stderr_text[:500]}")
+        for batch in self._batch_runtime_packages(runtime_packages):
+            last_stderr = ""
+            for attempt in range(3):
+                result = await sandbox.exec("pip", ["install", "-q", *batch])
+                if result.exit_code == 0:
+                    break
+                last_stderr = result.stderr_text
+                logger.warning(
+                    f"pip install batch failed (attempt {attempt + 1}/3): {last_stderr[:500]}"
+                )
+                if attempt < 2:
+                    await asyncio.sleep(2**attempt)  # exponential backoff
+            else:
+                raise RuntimeError(
+                    f"Failed to install pip batch after 3 attempts: {last_stderr}"
+                )
 
-        browser_result = await asyncio.wait_for(
-            sandbox.exec(
-                "python3",
-                [
-                    "-m",
-                    "playwright",
-                    "install",
-                    "--with-deps",
-                    "--only-shell",
-                    "chromium",
-                ],
+    async def _validate_playwright_import(self, sandbox):
+        result = await sandbox.exec(
+            "python3", ["-c", "import playwright; print(playwright.__version__)"]
+        )
+        if result.exit_code != 0:
+            raise RuntimeError(
+                "playwright import failed inside the VM after pip install. "
+                "The browser install would also fail; fix the pip environment first. "
+                f"stderr: {result.stderr_text[:500]}"
+            )
+
+    async def _exec_with_retry(
+        self,
+        sandbox,
+        command: str,
+        args: list[str],
+        *,
+        timeout: Optional[float] = None,
+        max_attempts: int = 2,
+    ):
+        """Run a sandbox command, retrying transient failures."""
+        last_stderr = ""
+        for attempt in range(max_attempts):
+            coro = sandbox.exec(command, args)
+            if timeout is not None:
+                coro = asyncio.wait_for(coro, timeout=timeout)
+            result = await coro
+            if result.exit_code == 0:
+                return result
+            last_stderr = result.stderr_text
+            logger.warning(
+                f"{command} failed (attempt {attempt + 1}/{max_attempts}): {last_stderr[:500]}"
+            )
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(2**attempt)
+        raise RuntimeError(
+            f"Failed to run {command} after {max_attempts} attempts: {last_stderr[:500]}"
+        )
+
+    async def _setup_vm(self, sandbox):
+        result = await sandbox.exec("python3", ["--version"])
+        logger.info(f"VM Python: {result.stdout_text.strip()}")
+
+        await self._copy_project_code(sandbox)
+
+        await self._install_runtime_packages(sandbox)
+
+        await self._validate_playwright_import(sandbox)
+
+        # Install Chromium system deps manually, then the browser binary.
+        # --with-deps fails on arm64 VMs because ttf-unifont /
+        # ttf-ubuntu-font-family have no installation candidate; the manual
+        # apt path skips those packages and succeeds.
+        apt_args = [
+            "-lc",
+            (
+                "apt-get update -qq && "
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y "
+                "--no-install-recommends "
+                + " ".join(PLAYWRIGHT_SYSTEM_PACKAGES)
             ),
+        ]
+        await self._exec_with_retry(
+            sandbox, "bash", apt_args, timeout=PLAYWRIGHT_BROWSER_TIMEOUT_SECONDS
+        )
+        await self._exec_with_retry(
+            sandbox,
+            "python3",
+            ["-m", "playwright", "install", "--only-shell", "chromium"],
             timeout=PLAYWRIGHT_BROWSER_TIMEOUT_SECONDS,
         )
-        if browser_result.exit_code != 0:
-            logger.warning(
-                "Playwright dependency install failed; retrying Chromium-only "
-                f"install: {browser_result.stderr_text[:500]}"
-            )
-            deps_result = await asyncio.wait_for(
-                sandbox.exec(
-                    "bash",
-                    [
-                        "-lc",
-                        (
-                            "apt-get update -qq && "
-                            "DEBIAN_FRONTEND=noninteractive apt-get install -y "
-                            "--no-install-recommends "
-                            + " ".join(PLAYWRIGHT_SYSTEM_PACKAGES)
-                        ),
-                    ],
-                ),
-                timeout=PLAYWRIGHT_BROWSER_TIMEOUT_SECONDS,
-            )
-            if deps_result.exit_code != 0:
-                logger.warning(
-                    "Manual Playwright dependency install had issues: "
-                    f"{deps_result.stderr_text[:500]}"
-                )
-            browser_result = await asyncio.wait_for(
-                sandbox.exec(
-                    "python3",
-                    ["-m", "playwright", "install", "--only-shell", "chromium"],
-                ),
-                timeout=PLAYWRIGHT_BROWSER_TIMEOUT_SECONDS,
-            )
-            if browser_result.exit_code != 0:
-                raise RuntimeError(
-                    "Failed to install Chromium for Playwright: "
-                    f"{browser_result.stderr_text[:500]}"
-                )
 
         await sandbox.exec("mkdir", ["-p", "/tmp"])
         await sandbox.exec("mkdir", ["-p", "/workspace"])
@@ -332,7 +382,7 @@ class SandboxSessionManager:
                 [
                     "/.cache/ms-playwright",
                     "-name",
-                    "headless_shell",
+                    "chrome",
                     "-type",
                     "f",
                     "-print",
@@ -416,8 +466,7 @@ class SandboxSessionManager:
             f"WEBMANUS_LLM_CONFIG={os.getenv('WEBMANUS_LLM_CONFIG', 'default')}",
             f"WEBMANUS_STEP_TIMEOUT={os.getenv('WEBMANUS_STEP_TIMEOUT', '120')}",
         ]
-        if browser_executable_path:
-            env_args.append("WEBMANUS_BROWSER_HEADLESS=true")
+        env_args.append("WEBMANUS_BROWSER_HEADLESS=true")
 
         stream = await sandbox.exec_stream(
             "env",
@@ -578,14 +627,15 @@ class SandboxSessionManager:
                     pass
 
             if info.sandbox:
-                try:
-                    await info.sandbox.stop()
-                except Exception:
-                    pass
-                try:
-                    await Sandbox.remove(info.vm_name)
-                except Exception:
-                    pass
+               try:
+                   await info.sandbox.stop()
+               except Exception:
+                   pass
+               if MICROSANDBOX_AVAILABLE:
+                   try:
+                       await Sandbox.remove(info.vm_name)
+                   except Exception:
+                       pass
 
         try:
             await asyncio.wait_for(cleanup(), timeout=SESSION_CLEANUP_TIMEOUT_SECONDS)
