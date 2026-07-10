@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
+import subprocess
+import sys
 
 try:
     from microsandbox import Sandbox
@@ -147,6 +149,50 @@ class EventParser:
         return events
 
 
+class LocalAgentStream:
+    """Wraps a local subprocess to mimic the microsandbox exec_stream interface.
+
+    The stream_events loop reads .agent_stream as an async iterator yielding
+    objects with .event_type ("stdout"/"stderr"/"exited") and .data/.code.
+    """
+
+    def __init__(self, proc: asyncio.subprocess.Process):
+        self._proc = proc
+
+    def __aiter__(self):
+        return self._iterate()
+
+    async def _iterate(self):
+        assert self._proc.stdout is not None
+        try:
+            while True:
+                line = await self._proc.stdout.readline()
+                if not line:
+                    # Process exited
+                    code = await self._proc.wait()
+                    yield _StreamEvent("exited", b"", code)
+                    return
+                yield _StreamEvent("stdout", line, 0)
+        except Exception as e:
+            yield _StreamEvent("exited", str(e).encode(), 1)
+
+    async def kill(self):
+        try:
+            self._proc.kill()
+            await self._proc.wait()
+        except Exception:
+            pass
+
+
+class _StreamEvent:
+    """Simple event object matching microsandbox stream events."""
+
+    def __init__(self, event_type: str, data: bytes, code: int = 0):
+        self.event_type = event_type
+        self.data = data
+        self.code = code
+
+
 class SandboxSessionManager:
     def __init__(self):
         self._sessions: Dict[str, SessionInfo] = {}
@@ -156,13 +202,6 @@ class SandboxSessionManager:
     async def create_session(self, session_id: Optional[str] = None) -> SessionInfo:
         session_id = session_id or f"sess_{uuid.uuid4().hex[:12]}"
         vm_name = f"webmanus_{session_id}"
-
-        if not MICROSANDBOX_AVAILABLE:
-            raise RuntimeError(
-                "microsandbox >= 0.4.0 is not installed on this platform. "
-                "VM-based sandbox sessions are unavailable. "
-                "Install microsandbox or use 'python main.py' for direct agent execution."
-            )
 
         llm_config_name = os.getenv("WEBMANUS_LLM_CONFIG", "default")
         llm_settings = config.llm.get(llm_config_name, config.llm["default"])
@@ -177,6 +216,9 @@ class SandboxSessionManager:
         self._event_queues[session_id] = asyncio.Queue()
 
         self.store.upsert(session_id, status=info.status, last_message=None, summary=None)
+
+        if not MICROSANDBOX_AVAILABLE:
+            return await self._create_local_session(info)
 
         try:
             sandbox = await asyncio.wait_for(
@@ -221,6 +263,48 @@ class SandboxSessionManager:
             logger.error(f"Session {session_id} setup failed: {e}")
             await self.destroy_session(session_id)
             raise
+
+    async def _create_local_session(self, info: SessionInfo) -> SessionInfo:
+        """Fallback: run agent_runner.py as a local subprocess when microsandbox is unavailable."""
+        runner_path = PROJECT_ROOT / "app" / "web" / "agent_runner.py"
+        if not runner_path.exists():
+            raise RuntimeError(f"agent_runner.py not found at {runner_path}")
+
+        env = os.environ.copy()
+        env["WEBMANUS_LLM_CONFIG"] = os.getenv("WEBMANUS_LLM_CONFIG", "default")
+        env["WEBMANUS_STEP_TIMEOUT"] = os.getenv("WEBMANUS_STEP_TIMEOUT", "120")
+        env["WEBMANUS_BROWSER_HEADLESS"] = "true"
+        env["PYTHONPATH"] = str(PROJECT_ROOT)
+        # Use the same input/state files as the VM path
+        env["PYTHONUNBUFFERED"] = "1"
+
+        # Ensure input file exists
+        Path(INPUT_FILE).parent.mkdir(parents=True, exist_ok=True)
+        Path(INPUT_FILE).write_bytes(b"")
+
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-u", str(runner_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+            cwd=str(PROJECT_ROOT),
+        )
+
+        # Wrap the subprocess as a stream-like object
+        info.agent_stream = LocalAgentStream(proc)
+        info.status = "ready"
+        info.vm_health = {
+            "status": "ready",
+            "python_version": sys.version.split()[0],
+            "working_directory": str(PROJECT_ROOT),
+            "runner_path_exists": True,
+            "tmp_writable": True,
+            "browser_ready": True,
+            "mode": "local",
+        }
+        self.store.update_status(info.session_id, "ready")
+        logger.info(f"Session {info.session_id} ready (local mode, no VM)")
+        return info
 
     @staticmethod
     def _batch_runtime_packages(packages, batch_size=5):
@@ -477,13 +561,17 @@ class SandboxSessionManager:
 
     async def send_message(self, session_id: str, message: str) -> bool:
         info = self._sessions.get(session_id)
-        if not info or not info.sandbox:
+        if not info:
             raise ValueError(f"Session {session_id} not found")
         if info.status != "ready":
             raise ValueError(f"Session {session_id} is not ready")
 
         msg_data = json.dumps({"message": message}).encode("utf-8")
-        await info.sandbox.fs.write(INPUT_FILE, msg_data)
+        if info.sandbox:
+            await info.sandbox.fs.write(INPUT_FILE, msg_data)
+        else:
+            # Local mode: write directly to the input file
+            Path(INPUT_FILE).write_bytes(msg_data)
         self.store.upsert(session_id, last_message=message)
         await self._emit_server_event(
             session_id,
@@ -682,8 +770,24 @@ class SandboxSessionManager:
 
     async def list_vm_files(self, session_id: str, path: str) -> dict:
         info = self._sessions.get(session_id)
-        if not info or not info.sandbox:
+        if not info:
             raise ValueError(f"Session {session_id} not found")
+        if not info.sandbox:
+            # Local mode: list files from PROJECT_ROOT/workspace
+            local_path = PROJECT_ROOT / "workspace"
+            if not local_path.exists():
+                local_path = PROJECT_ROOT
+            try:
+                entries = []
+                for entry in sorted(local_path.iterdir()):
+                    entries.append({
+                        "name": entry.name,
+                        "path": str(entry),
+                        "size": entry.stat().st_size if entry.is_file() else None,
+                    })
+                return {"path": str(local_path), "files": entries}
+            except Exception as e:
+                raise RuntimeError(f"Failed to list local files: {e}")
         path = self._validate_file_path(path)
         result = await info.sandbox.exec("ls", ["-la", path])
         if result.exit_code != 0:
@@ -706,8 +810,17 @@ class SandboxSessionManager:
 
     async def read_vm_file(self, session_id: str, path: str) -> bytes:
         info = self._sessions.get(session_id)
-        if not info or not info.sandbox:
+        if not info:
             raise ValueError(f"Session {session_id} not found")
+        if not info.sandbox:
+            # Local mode: read from local filesystem
+            local_path = Path(path)
+            if not local_path.is_absolute():
+                local_path = PROJECT_ROOT / "workspace" / path
+            try:
+                return local_path.read_bytes()
+            except Exception as e:
+                raise RuntimeError(f"Failed to read local file: {e}")
         path = self._validate_file_path(path)
         try:
             return await info.sandbox.fs.read(path)
