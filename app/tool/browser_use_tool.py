@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import os
 from typing import Generic, Optional, TypeVar
 
 from browser_use import Browser as BrowserUseBrowser
@@ -142,6 +143,8 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         """Ensure browser and context are initialized."""
         if self.browser is None:
             browser_config_kwargs = {"headless": False, "disable_security": True}
+            if os.getenv("WEBMANUS_BROWSER_HEADLESS") == "true":
+                browser_config_kwargs["headless"] = True
 
             if config.browser_config:
                 from browser_use.browser.browser import ProxySettings
@@ -253,18 +256,9 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         return ToolResult(
                             error="Query is required for 'web_search' action"
                         )
-                    # Execute the web search and return results directly without browser navigation
                     search_response = await self.web_search_tool.execute(
-                        query=query, fetch_content=True, num_results=1
+                        query=query, fetch_content=True, num_results=5
                     )
-                    # Navigate to the first search result
-                    first_search_result = search_response.results[0]
-                    url_to_navigate = first_search_result.url
-
-                    page = await context.get_current_page()
-                    await page.goto(url_to_navigate)
-                    await page.wait_for_load_state()
-
                     return search_response
 
                 # Element interaction actions

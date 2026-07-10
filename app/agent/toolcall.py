@@ -38,8 +38,17 @@ class ToolCallAgent(ReActAgent):
 
     async def think(self) -> bool:
         """Process current state and decide next actions using tools"""
+        tool_calls_enabled = getattr(self.llm, "tool_calls_enabled", True)
         if self.next_step_prompt:
-            user_msg = Message.user_message(self.next_step_prompt)
+            prompt = self.next_step_prompt
+            if not tool_calls_enabled:
+                prompt = (
+                    "Tool/function calling is unavailable for the current model "
+                    "profile. Answer directly in text. If the request requires "
+                    "browser, shell, file, or other tool execution, explain that "
+                    "this model profile cannot execute tools."
+                )
+            user_msg = Message.user_message(prompt)
             self.messages += [user_msg]
 
         try:
@@ -51,7 +60,9 @@ class ToolCallAgent(ReActAgent):
                     if self.system_prompt
                     else None
                 ),
-                tools=self.available_tools.to_params(),
+                tools=(
+                    self.available_tools.to_params() if tool_calls_enabled else None
+                ),
                 tool_choice=self.tool_choices,
             )
         except ValueError:

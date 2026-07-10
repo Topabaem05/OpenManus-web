@@ -4,7 +4,9 @@ model = "claude-3-7-sonnet-20250219"       # The LLM model to use
 base_url = "https://api.anthropic.com/v1/" # API endpoint URL
 api_key = "YOUR_API_KEY"                   # Your API key
 max_tokens = 8192                          # Maximum number of tokens in the response
-temperature = 0.0                          # Controls randomness
+temperature = 0.0                           # Controls randomness
+fallback_models = ["umans-flash"]          # Fallback models when primary fails
+request_timeout = 30.0                       # Request timeout in seconds
 
 # [llm] # Amazon Bedrock
 # api_type = "aws"                                       # Required

@@ -1,8 +1,10 @@
+import asyncio
 import math
 from typing import Dict, List, Optional, Union
 
 import tiktoken
 from openai import (
+    APIConnectionError,
     APIError,
     AsyncAzureOpenAI,
     AsyncOpenAI,
@@ -12,6 +14,7 @@ from openai import (
     OpenAIError,
     PermissionDeniedError,
     RateLimitError,
+    APITimeoutError,
     UnprocessableEntityError,
 )
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
@@ -43,6 +46,7 @@ MULTIMODAL_MODELS = [
     "claude-3-opus-20240229",
     "claude-3-sonnet-20240229",
     "claude-3-haiku-20240307",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 ]
 
 
@@ -209,6 +213,7 @@ class LLM:
         self, config_name: str = "default", llm_config: Optional[LLMSettings] = None
     ):
         if not hasattr(self, "client"):  # Only initialize if not already initialized
+            self.config_name = config_name
             llm_config = llm_config or config.llm
             llm_config = llm_config.get(config_name, llm_config["default"])
             self.model = llm_config.model
@@ -218,6 +223,11 @@ class LLM:
             self.api_key = llm_config.api_key
             self.api_version = llm_config.api_version
             self.base_url = llm_config.base_url
+            self.reasoning_enabled = llm_config.reasoning_enabled
+            self.tool_calls_enabled = llm_config.tool_calls_enabled
+            self.app_url = llm_config.app_url
+            self.app_name = llm_config.app_name
+            self.fallback_models = llm_config.fallback_models
 
             # Add token counting related attributes
             self.total_input_tokens = 0
@@ -235,18 +245,52 @@ class LLM:
                 # If the model is not in tiktoken's presets, use cl100k_base as default
                 self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
+            self.timeout = getattr(llm_config, "request_timeout", 60.0)
             if self.api_type == "azure":
                 self.client = AsyncAzureOpenAI(
                     base_url=self.base_url,
                     api_key=self.api_key,
                     api_version=self.api_version,
+                    timeout=self.timeout,
                 )
             elif self.api_type == "aws":
                 self.client = BedrockClient()
             else:
-                self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+                self.client = AsyncOpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    default_headers=self._provider_headers(),
+                    timeout=self.timeout,
+                )
 
             self.token_counter = TokenCounter(self.tokenizer)
+
+    def _is_openrouter(self) -> bool:
+        return (
+            self.api_type.lower() == "openrouter"
+            or "openrouter.ai" in self.base_url.lower()
+        )
+
+    def _is_umans(self) -> bool:
+        return "umans.ai" in self.base_url.lower()
+
+    def _provider_headers(self) -> Optional[dict[str, str]]:
+        if self._is_openrouter():
+            headers = {"X-OpenRouter-Title": self.app_name or "OpenManus-web"}
+            if self.app_url:
+                headers["HTTP-Referer"] = self.app_url
+            return headers
+
+        if self._is_umans():
+            return {"X-App-Name": self.app_name or "OpenManus-web"}
+
+        return None
+
+    def _apply_provider_options(self, params: dict) -> dict:
+        if self._is_openrouter() and self.reasoning_enabled:
+            extra_body = params.setdefault("extra_body", {})
+            extra_body["reasoning"] = {"enabled": True}
+        return params
 
     def count_tokens(self, text: str) -> int:
         """Calculate the number of tokens in a text"""
@@ -256,6 +300,46 @@ class LLM:
 
     def count_message_tokens(self, messages: List[dict]) -> int:
         return self.token_counter.count_message_tokens(messages)
+
+    async def _create_with_fallback(
+        self,
+        params: dict,
+        extract_content: callable,
+        stream: bool = False,
+    ):
+        last_error = None
+        models_to_try = [self.model] + list(getattr(self, "fallback_models", []))
+        for idx, model in enumerate(models_to_try):
+            try:
+                params["model"] = model
+                response = await self.client.chat.completions.create(
+                    **params, stream=stream, timeout=self.timeout
+                )
+                content = extract_content(response)
+                if content is None:
+                    last_error = ValueError("Empty or invalid response from LLM")
+                    logger.warning(f"Model {model} returned empty response; rotating fallback")
+                    if idx == len(models_to_try) - 1:
+                        logger.error("All fallback models exhausted")
+                    continue
+                self.update_token_count(
+                    response.usage.prompt_tokens, response.usage.completion_tokens
+                )
+                return content
+            except (RateLimitError, APIConnectionError, APITimeoutError, asyncio.TimeoutError) as exc:
+                last_error = exc
+                logger.warning(
+                    f"Model {model} failed with transient error {type(exc).__name__}; rotating fallback"
+                )
+                if idx == len(models_to_try) - 1:
+                    logger.error("All fallback models exhausted")
+                continue
+            except AuthenticationError:
+                logger.error(f"Authentication failed for model {model}")
+                raise
+        if last_error is not None:
+            raise last_error
+        raise ValueError("Empty or invalid response from LLM")
 
     def update_token_count(self, input_tokens: int, completion_tokens: int = 0) -> None:
         """Update token counts"""
@@ -435,31 +519,26 @@ class LLM:
                 params["temperature"] = (
                     temperature if temperature is not None else self.temperature
                 )
+            params = self._apply_provider_options(params)
 
             if not stream:
-                # Non-streaming request
-                response = await self.client.chat.completions.create(
-                    **params, stream=False
+                content = await self._create_with_fallback(
+                    params,
+                    stream=False,
+                    extract_content=lambda r: r.choices[0].message.content if r.choices and r.choices[0].message.content else None,
                 )
-
-                if not response.choices or not response.choices[0].message.content:
-                    raise ValueError("Empty or invalid response from LLM")
-
-                # Update token counts
-                self.update_token_count(
-                    response.usage.prompt_tokens, response.usage.completion_tokens
-                )
-
-                return response.choices[0].message.content
+                return content
 
             # Streaming request, For streaming, update estimated token count before making the request
             self.update_token_count(input_tokens)
 
-            response = await self.client.chat.completions.create(**params, stream=True)
+            response = await self.client.chat.completions.create(**params, stream=True, timeout=self.timeout)
 
             collected_messages = []
             completion_text = ""
             async for chunk in response:
+                if not chunk.choices:
+                    continue
                 chunk_message = chunk.choices[0].delta.content or ""
                 collected_messages.append(chunk_message)
                 completion_text += chunk_message
@@ -610,10 +689,11 @@ class LLM:
                 params["temperature"] = (
                     temperature if temperature is not None else self.temperature
                 )
+            params = self._apply_provider_options(params)
 
             # Handle non-streaming request
             if not stream:
-                response = await self.client.chat.completions.create(**params)
+                response = await self.client.chat.completions.create(**params, timeout=self.timeout)
 
                 if not response.choices or not response.choices[0].message.content:
                     raise ValueError("Empty or invalid response from LLM")
@@ -623,10 +703,12 @@ class LLM:
 
             # Handle streaming request
             self.update_token_count(input_tokens)
-            response = await self.client.chat.completions.create(**params)
+            response = await self.client.chat.completions.create(**params, timeout=self.timeout)
 
             collected_messages = []
             async for chunk in response:
+                if not chunk.choices:
+                    continue
                 chunk_message = chunk.choices[0].delta.content or ""
                 collected_messages.append(chunk_message)
                 print(chunk_message, end="", flush=True)
@@ -730,8 +812,19 @@ class LLM:
                 # Raise a special exception that won't be retried
                 raise TokenLimitExceeded(error_message)
 
-            # Validate tools if provided
-            if tools:
+            use_tools = bool(tools) and self.tool_calls_enabled
+            if tools and not self.tool_calls_enabled:
+                if tool_choice == ToolChoice.REQUIRED:
+                    raise ValueError(
+                        "Tool calls are disabled for this LLM configuration"
+                    )
+                logger.info(
+                    "Tool calls are disabled for this LLM configuration; "
+                    "sending a plain chat completion request."
+                )
+
+            # Validate tools if they will be sent
+            if use_tools:
                 for tool in tools:
                     if not isinstance(tool, dict) or "type" not in tool:
                         raise ValueError("Each tool must be a dict with 'type' field")
@@ -740,11 +833,12 @@ class LLM:
             params = {
                 "model": self.model,
                 "messages": messages,
-                "tools": tools,
-                "tool_choice": tool_choice,
                 "timeout": timeout,
                 **kwargs,
             }
+            if use_tools:
+                params["tools"] = tools
+                params["tool_choice"] = tool_choice
 
             if self.model in REASONING_MODELS:
                 params["max_completion_tokens"] = self.max_tokens
@@ -753,30 +847,24 @@ class LLM:
                 params["temperature"] = (
                     temperature if temperature is not None else self.temperature
                 )
+            params = self._apply_provider_options(params)
 
             params["stream"] = False  # Always use non-streaming for tool requests
-            response: ChatCompletion = await self.client.chat.completions.create(
-                **params
+
+            response_message = await self._create_with_fallback(
+                params,
+                extract_content=lambda r: r.choices[0].message if r.choices and r.choices[0].message else None,
             )
-
-            # Check if response is valid
-            if not response.choices or not response.choices[0].message:
-                print(response)
-                # raise ValueError("Invalid or empty response from LLM")
-                return None
-
-            # Update token counts
-            self.update_token_count(
-                response.usage.prompt_tokens, response.usage.completion_tokens
-            )
-
-            return response.choices[0].message
+            return response_message
 
         except TokenLimitExceeded:
             # Re-raise token limit errors without logging
             raise
         except ValueError as ve:
             logger.error(f"Validation error in ask_tool: {ve}")
+            raise
+        except asyncio.TimeoutError:
+            logger.error("asyncio timeout in ask")
             raise
         except OpenAIError as oe:
             logger.error(f"OpenAI API error: {oe}")
