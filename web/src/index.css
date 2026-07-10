@@ -1,0 +1,155 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
+@import "tailwindcss";
+
+:root {
+  /* Manus brand tokens — light mode default */
+  --color-brand-black: #34322D;
+  --color-brand-gray: #F8F8F8;
+  --color-brand-white: #FFFFFF;
+  --color-bg-primary: #F8F8F7;
+  --color-bg-secondary: #FFFFFF;
+  --color-bg-tertiary: #EBEBEB;
+  --color-bg-elevated: #FFFFFF;
+  --color-text-primary: #34322D;
+  --color-text-secondary: #5E5E5B;
+  --color-text-tertiary: #858481;
+  --color-border: rgba(0,0,0,0.08);
+  --color-cta-bg: #34322D;
+  --color-cta-text: #FFFFFF;
+  --color-destructive: #E05050;
+  --color-success: #22C55E;
+  --color-status-active: #3B82F6;
+  --color-status-pending: #6B7280;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Libre Baskerville", ui-serif, Georgia, serif;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 24px;
+  --transition-fast: 150ms ease-out;
+  --transition-medium: 250ms ease-out;
+  --transition-slow: 350ms ease-in-out;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.10);
+}
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Libre Baskerville", ui-serif, Georgia, serif;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3.section-title {
+  font-family: var(--font-serif);
+}
+
+/* ---- Manus animation keyframes (design system spec) ---- */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-in-from-bottom-2 {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes slide-in-from-bottom-4 {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes zoom-in-95 {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Pulsing status indicator — blue dot for active agent steps */
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+}
+
+/* Checkmark SVG stroke draw-in with bounce */
+@keyframes checkmarkDraw {
+  0% { stroke-dashoffset: 24; }
+  60% { stroke-dashoffset: -2; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* Panel slide up — computer dock expand */
+@keyframes panelSlideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Loading ring — continuous rotation */
+@keyframes loadingRing {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Modal appear — overlay fade + dialog scale */
+@keyframes modalAppear {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Thumbnail crossfade between frames */
+@keyframes thumbnailCrossfade {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+/* Dropdown scale from origin + fade */
+@keyframes dropdownScale {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-in { animation-duration: 300ms; animation-fill-mode: both; }
+.fade-in { animation-name: fade-in; }
+.slide-in-from-bottom-2 { animation-name: slide-in-from-bottom-2; }
+.slide-in-from-bottom-4 { animation-name: slide-in-from-bottom-4; }
+.zoom-in-95 { animation-name: zoom-in-95; }
+.duration-150 { animation-duration: 150ms; }
+.duration-200 { animation-duration: 200ms; }
+.duration-300 { animation-duration: 300ms; }
+.duration-500 { animation-duration: 500ms; }
+
+/* Manus-specific animation helpers */
+.animate-status-pulse { animation: statusPulse 2s ease-in-out infinite; }
+.animate-loading-ring { animation: loadingRing 0.8s linear infinite; }
+.animate-panel-slide-up { animation: panelSlideUp 350ms ease-in-out both; }
+.animate-modal-appear { animation: modalAppear 250ms ease-out both; }
+.animate-dropdown { animation: dropdownScale 200ms ease-out both; }
+.animate-thumbnail-crossfade { animation: thumbnailCrossfade 300ms ease-in-out both; }
+.animate-checkmark-draw {
+  stroke-dasharray: 24;
+  animation: checkmarkDraw 400ms ease-out both;
+}
+
+/* Custom scrollbar — light theme */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bg-primary); }
+::-webkit-scrollbar-thumb { background: #D4D4D4; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #B0B0B0; }
+
+/* Reduce motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

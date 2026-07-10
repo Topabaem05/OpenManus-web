@@ -3,6 +3,8 @@ import asyncio
 
 from app.agent.manus import Manus
 from app.logger import logger
+from app.runtime.events import ConsoleEventSink
+from app.runtime.runner import TaskRunner
 
 
 async def main():
@@ -10,6 +12,12 @@ async def main():
     parser = argparse.ArgumentParser(description="Run Manus agent with a prompt")
     parser.add_argument(
         "--prompt", type=str, required=False, help="Input prompt for the agent"
+    )
+    parser.add_argument(
+        "--events",
+        action="store_true",
+        default=False,
+        help="Output structured JSON events for each agent step",
     )
     args = parser.parse_args()
 
@@ -22,9 +30,16 @@ async def main():
             logger.warning("Empty prompt provided.")
             return
 
-        logger.warning("Processing your request...")
-        await agent.run(prompt)
-        logger.info("Request processing completed.")
+        if args.events:
+            # Event-based mode: use TaskRunner with ConsoleEventSink
+            sink = ConsoleEventSink()
+            runner = TaskRunner(agent=agent, event_sink=sink)
+            await runner.run(prompt)
+        else:
+            # Default mode: existing behavior
+            logger.warning("Processing your request...")
+            await agent.run(prompt)
+            logger.info("Request processing completed.")
     except KeyboardInterrupt:
         logger.warning("Operation interrupted.")
     finally:
